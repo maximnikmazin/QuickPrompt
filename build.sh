@@ -11,6 +11,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/release/QuickPrompt "$APP/Contents/MacOS/"
 cp Info.plist "$APP/Contents/"
+# Textual's code highlighting; its formula fonts are left out because the app never shows formulas.
+mkdir -p "$APP/Contents/Resources"
+cp -R .build/release/textual_Textual.bundle "$APP/Contents/Resources/"
 
 IDENTITY=$(security find-identity -v -p codesigning | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"' || true)
 if [[ -n "$IDENTITY" ]]; then

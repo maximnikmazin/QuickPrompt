@@ -219,14 +219,23 @@ struct PopupView: View {
         }
     }
 
-    private var resultText: some View {
-        Text(model.text.isEmpty ? "Working…" : model.text)
-            .id("start")
-            .font(.system(size: model.appearance.resultFontSize))
-            .lineSpacing(model.appearance.lineSpacing)
-            .foregroundStyle(textColor)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
+    @ViewBuilder private var resultText: some View {
+        if model.phase == .error || model.text.isEmpty {
+            Text(model.text.isEmpty ? "Working…" : model.text)
+                .id("start")
+                .font(.system(size: model.appearance.resultFontSize))
+                .lineSpacing(model.appearance.lineSpacing)
+                .foregroundStyle(textColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            // Models answer in Markdown; it is shown as formatting, not as ** and - marks.
+            MarkdownBody(text: model.text, fontSize: model.appearance.resultFontSize,
+                         lineSpacing: model.appearance.lineSpacing, color: textColor)
+                .id("start")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var textColor: Color {
@@ -293,6 +302,7 @@ final class NotchPopup {
     var screenChoice: PopupScreen = .notch
 
     private let model = PopupModel()
+    private let measurer = MarkdownMeasurer()
     private let panel: IslandPanel
     private let hoverView = HoverView()
     private var hideTimer: Timer?
@@ -478,10 +488,9 @@ final class NotchPopup {
     func writeSnapshot(to path: String) {
         let screen = targetScreen()
         FileHandle.standardError.write(Data("screen \(screen.localizedName) frame \(screen.frame) notch \(Self.notchRect(on: screen)) popup \(panel.frame) visible \(panel.isVisible)\n".utf8))
-        let renderer = ImageRenderer(content: PopupView(model: model).frame(width: panel.frame.width, height: panel.frame.height))
-        renderer.scale = 2
-        guard let image = renderer.cgImage else { return }
-        let bitmap = NSBitmapImageRep(cgImage: image)
+        // The window itself is drawn into the image: SwiftUI's ImageRenderer leaves the formatted text out.
+        guard let view = panel.contentView, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
         try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
@@ -571,9 +580,15 @@ final class NotchPopup {
             // One width for every message, from "working" to the result: fitting it to each text made the popup
             // jump between narrow and wide while it was on screen. Lines therefore never rewrap while streaming.
             width = max(minimumWidth, maximumWidth)
-            let textHeight = ceil((shown as NSString).boundingRect(
-                with: NSSize(width: width - horizontal, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes).height) + 2
+            let textHeight: CGFloat
+            if model.phase == .error || model.text.isEmpty {
+                textHeight = ceil((shown as NSString).boundingRect(
+                    with: NSSize(width: width - horizontal, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes).height) + 2
+            } else {
+                textHeight = measurer.height(of: model.text, width: width - horizontal,
+                                             fontSize: appearance.resultFontSize, lineSpacing: appearance.lineSpacing) + 2
+            }
             if streaming {
                 streamedBodyHeight = max(streamedBodyHeight, min(textHeight, maximumBody))
                 bodyHeight = streamedBodyHeight
@@ -619,6 +634,7 @@ final class NotchPopup {
                 panel.animator().setFrame(target, display: true)
             }
         }
+        if demoFrameLog { Log.write("popup window \(panel.windowNumber) body height \(Int(bodyHeight))") }
         if demoFrameLog { Log.write("popup frame \(Int(target.minX)) \(Int(target.minY)) \(Int(target.width))x\(Int(target.height)) top=\(Int(target.maxY)) streaming=\(streaming)") }
     }
 

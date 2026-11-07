@@ -179,6 +179,16 @@ System Settings completely and open it again: the list is not always refreshed w
 4. The result is on the clipboard, or already pasted over the selection when the action is set to *Replace
    selection*.
 
+### Formatting
+
+Models often answer in Markdown. The popup shows it as formatting: bold and italic text, headings, bulleted and
+numbered lists, quotes, tables and code (rendered with [Textual](https://github.com/gonzalezreal/textual)).
+
+The clipboard gets the result twice: as rich text, which Notes, Mail, Pages and Google Docs keep with its bold text,
+lists and tables, and as plain text without the `**` and `-` marks, with "•" before list items and tabs between table
+cells, for plain fields such as Terminal. If the selected text was itself Markdown, for example a README paragraph,
+the result is copied exactly as the model wrote it, with its marks.
+
 ### The list of all actions
 
 Press **⌥⌘0** with text selected. The popup lists every action with a number and its shortcut. Choose one with
@@ -410,7 +420,8 @@ Engines that were tried and not included:
 ## Project structure
 
 ```
-Package.swift                 Swift package, macOS 26, Swift 5 language mode
+Package.swift                 Swift package, macOS 26, Swift 5 language mode; depends on Textual
+Package.resolved              Exact versions of Textual and the packages it uses
 Info.plist                    Bundle identifier, menu bar only (LSUIElement)
 build.sh                      Build, sign, install into ~/Applications
 release.sh                    Build the universal, ad hoc signed zip for a GitHub release
@@ -423,6 +434,7 @@ Sources/QuickPrompt/
   SettingsView.swift          Settings window: actions list, action editor, general settings, shortcut recorder
   MenuPopoverView.swift       The panel that opens from the menu bar icon
   NotchPopup.swift            The popup under the notch, including the list of all actions
+  PopupMarkdown.swift         Markdown in the popup (Textual style), its height, rich and plain text for the clipboard
   SelectionCopier.swift       Copying the selection, pasting, the diagnostic log
   Translators.swift           Language direction, Apple Translation, the Claude Code runner
   Codex.swift                 The Codex runner: one app-server process, conversations prepared in advance

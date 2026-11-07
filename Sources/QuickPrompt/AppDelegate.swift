@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let arguments = CommandLine.arguments
         // `--demo <text>` shows a finished popup without copying anything, for screenshots.
         if let index = arguments.firstIndex(of: "--demo"), index + 1 < arguments.count {
+            popup.demoFrameLog = true
             popup.showWorking(label: "Claude · EN → RU")
             popup.showResult(arguments[index + 1])
             if let snapshot = arguments.firstIndex(of: "--snapshot"), snapshot + 1 < arguments.count {
@@ -35,6 +36,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     MainActor.assumeIsolated { popup.writeSnapshot(to: path) }
                 }
             }
+            return
+        }
+        // `--demo-clipboard <result file> <source file> <output folder>` writes what a result would put on the
+        // clipboard (plain.txt, page.html, rich.rtf) into a folder, using a private pasteboard; nothing is copied.
+        if let index = arguments.firstIndex(of: "--demo-clipboard"), index + 3 < arguments.count {
+            let read = { (path: String) in (try? String(contentsOfFile: path, encoding: .utf8)) ?? "" }
+            let copy = ClipboardResult(result: read(arguments[index + 1]), source: read(arguments[index + 2]))
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name("QuickPrompt.demo"))
+            copy.write(to: pasteboard)
+            let folder = URL(fileURLWithPath: arguments[index + 3])
+            try? pasteboard.string(forType: .string)?.write(to: folder.appendingPathComponent("plain.txt"), atomically: true, encoding: .utf8)
+            try? pasteboard.string(forType: .html)?.write(to: folder.appendingPathComponent("page.html"), atomically: true, encoding: .utf8)
+            try? pasteboard.data(forType: .rtf)?.write(to: folder.appendingPathComponent("rich.rtf"))
+            pasteboard.releaseGlobally()
+            NSApp.terminate(nil)
             return
         }
         // `--demo-action <action name> <model> <text>` runs an action three times with another model (for example
@@ -81,8 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popup.demoFrameLog = true
             popup.beginAttempt()
             popup.showWorking(label: "Summarise · Sonnet")
-            let words = String(repeating: "The popup should stay still while this answer streams in word by word, "
-                + "growing only downwards without rewrapping or jumping. ", count: 12).split(separator: " ")
+            let sample = String(repeating: "- **Point:** the popup should stay still while this answer streams in word by word, "
+                + "growing only downwards without rewrapping or jumping.\n", count: 12)
+            let words = sample.split(separator: " ", omittingEmptySubsequences: false)
             Task { @MainActor [popup] in
                 var text = ""
                 for word in words {
@@ -241,8 +258,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 let result = answer.text
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(result, forType: .string)
+                let copy = ClipboardResult(result: result, source: text)
+                copy.write()
                 state.lastResult = (label: label, text: result)
 
                 var status = "Copied"
@@ -252,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // and the clipboard still holds this result; otherwise it stays copied only.
                     if Task.isCancelled { return }
                     if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApp,
-                       NSPasteboard.general.string(forType: .string) == result {
+                       NSPasteboard.general.string(forType: .string) == copy.plain {
                         SelectionCopier.paste()
                         status = "Replaced"
                     } else {
@@ -264,7 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 Log.write("#\(attempt) action=\(action.name) model=\(action.model) resolved=\(state.resolvedModels[action.model] ?? "-") "
                     + "result=\(action.result.rawValue) popup=\(action.popup.rawValue) status=\(status) "
-                    + "totalMs=\(Int(Date().timeIntervalSince(started) * 1000)) characters=\(result.count)")
+                    + "totalMs=\(Int(Date().timeIntervalSince(started) * 1000)) characters=\(result.count) rich=\(copy.html != nil)")
             } catch is CancellationError {
                 return
             } catch {
