@@ -4,7 +4,7 @@ A small macOS menu bar app that works on the text you have selected in any appli
 shortcut, and the result appears in a black popup that grows out of the MacBook notch, like the Dynamic Island on an
 iPhone. The result is put on the clipboard or pasted straight over the selection.
 
-https://github.com/user-attachments/assets/c0f5bcec-50b2-4c58-8c61-faddfc6575df
+https://github.com/user-attachments/assets/c7e901db-eed3-4756-9c2b-0c46142e4f8f
 
 It runs on your Mac with what you already have: Apple Translation, and Claude Code or Codex signed in with your Claude
 or ChatGPT subscription. No API key, no account, free and open source.
