@@ -89,6 +89,7 @@ private struct ActionCard: View {
         switch action.popup {
         case .autoHide: popup = "auto-hide"
         case .stay: popup = "stays until clicked"
+        case .compact: popup = "compact"
         case .hidden: popup = "no popup"
         }
         return "\(state.modelTitle(action.model)) · \(action.result == .replace ? "replace" : "copy") · \(popup)"

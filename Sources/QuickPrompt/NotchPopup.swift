@@ -28,6 +28,20 @@ final class PopupModel: ObservableObject {
     /// A short explanation above the text, in orange, for example when an answer was cut off.
     @Published var notice: String?
     @Published var noticeHeight: CGFloat = 0
+    /// The "Compact" popup: only `compactLabel` left of the notch and the moving dots right of it, while it works.
+    @Published var compact = false
+    @Published var compactLabel = ""
+    /// The width of each side next to the notch, the notch's own width, and the corner radii of the small shape.
+    @Published var compactSide: CGFloat = 40
+    @Published var compactGap: CGFloat = 200
+    @Published var compactTopRadius: CGFloat = 0
+    @Published var compactBottomRadius: CGFloat = 10
+    /// The compact popup opens by widening the notch to both sides and closes by narrowing back to `compactClosedWidth`
+    /// (the notch's width), with no fade.
+    @Published var compactOpen = false
+    /// The name and the dots: they come in while the notch widens and leave before it narrows.
+    @Published var compactShown = false
+    @Published var compactClosedWidth: CGFloat = 200
     var onPick: (Int) -> Void = { _ in }
     var onCancel: () -> Void = {}
 }
@@ -97,6 +111,54 @@ struct PopupView: View {
     @State private var scroll: ScrollGeometry?
 
     var body: some View {
+        if model.compact && model.mode == .message {
+            compactView
+        } else {
+            fullView
+        }
+    }
+
+    /// The "Compact" popup: the action name on the left of the notch, the moving dots on the right, as tall as the
+    /// notch. A click on it opens the full popup (NotchPopup.clicked).
+    private var compactView: some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: model.compactTopRadius,
+                                           bottomLeadingRadius: model.compactBottomRadius,
+                                           bottomTrailingRadius: model.compactBottomRadius,
+                                           topTrailingRadius: model.compactTopRadius)
+        return GeometryReader { box in
+            ZStack {
+                shape.fill(.black)
+                compactContent.frame(width: box.size.width)
+            }
+            // The black shape grows out of the notch to both sides. The name and the dots come in while it widens
+            // and leave before it narrows, so its edges never cut them.
+            .frame(width: model.compactOpen ? box.size.width : model.compactClosedWidth, height: box.size.height)
+            .clipShape(shape)
+            .frame(width: box.size.width, height: box.size.height)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var compactContent: some View {
+        HStack(spacing: 0) {
+            Text(model.compactLabel)
+                .font(.system(size: NotchPopup.compactFontSize, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: model.compactSide, alignment: .leading)
+                .opacity(model.compactShown ? 1 : 0)
+                .offset(x: model.compactShown ? 0 : 10)
+            Color.clear.frame(width: model.compactGap)
+            LoadingDots(size: NotchPopup.compactFontSize)
+                .frame(width: model.compactSide, alignment: .trailing)
+                .opacity(model.compactShown ? 1 : 0)
+                .offset(x: model.compactShown ? 0 : -10)
+        }
+        .padding(.horizontal, NotchPopup.compactPadding)
+    }
+
+    private var fullView: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text(model.label)
@@ -286,6 +348,8 @@ final class HoverView: NSView {
 @MainActor
 final class NotchPopup {
     static func rowHeight(_ menuFontSize: CGFloat) -> CGFloat { menuFontSize + 19 }
+    static let compactFontSize: CGFloat = 11
+    static let compactPadding: CGFloat = 12
 
     var appearance = Appearance() {
         didSet {
@@ -338,7 +402,7 @@ final class NotchPopup {
         hosting.autoresizingMask = [.width, .height]
         hoverView.addSubview(hosting)
         hoverView.onHover = { [weak self] inside in self?.hoverChanged(inside) }
-        panel.onClick = { [weak self] in self?.dismiss() }
+        panel.onClick = { [weak self] in self?.clicked() }
         panel.contentView = hoverView
         model.onPick = { [weak self] index in self?.finishList(index) }
         model.onCancel = { [weak self] in self?.finishList(nil) }
@@ -351,12 +415,16 @@ final class NotchPopup {
         pendingPartial = nil
     }
 
-    func showWorking(label: String) {
+    /// With `compactLabel` the popup is the "Compact" one: that name and the moving dots beside the notch, until the
+    /// result comes (it then closes at once), an error comes, or the person clicks it.
+    func showWorking(label: String, compactLabel: String? = nil) {
         endListMode()
         dismissed = false
         stickUntilClicked = false
         hideTimer?.invalidate()
         model.mode = .message
+        model.compact = compactLabel != nil
+        model.compactLabel = compactLabel ?? ""
         model.label = label
         model.notice = nil
         model.text = ""
@@ -388,6 +456,14 @@ final class NotchPopup {
     func showResult(_ text: String, label: String? = nil, status: String = "Copied", stayUntilClicked: Bool = false) {
         guard !dismissed else { return }
         pendingPartial = nil
+        // The compact popup shows no result: it goes back into the notch as soon as the action is done.
+        if model.compact, model.mode == .message {
+            model.text = text
+            model.phase = .done
+            hideTimer?.invalidate()
+            hide(evenWhileHovered: true)
+            return
+        }
         endListMode()
         model.mode = .message
         if let label { model.label = label }
@@ -403,12 +479,14 @@ final class NotchPopup {
     /// Shows a message again even after the person closed the previous one, for example "Last result".
     func reopen(_ text: String, label: String) {
         dismissed = false
+        model.compact = false
         showResult(text, label: label, status: "Last result", stayUntilClicked: true)
     }
 
     /// Shows an answer that stopped before Claude finished. It is not copied; the popup stays until clicked.
     func showIncomplete(_ text: String, label: String, notice: String) {
         guard !dismissed else { return }
+        model.compact = false
         showResult(text, label: label, status: "Unfinished · not copied", stayUntilClicked: true)
         model.notice = notice
         layout()
@@ -419,6 +497,8 @@ final class NotchPopup {
         pendingPartial = nil
         endListMode()
         model.mode = .message
+        // An error always opens the full popup, also for a "Compact" action.
+        model.compact = false
         model.label = label
         model.notice = nil
         model.text = message
@@ -435,6 +515,7 @@ final class NotchPopup {
         dismissed = false
         stickUntilClicked = true
         listCompletion = completion
+        model.compact = false
         model.mode = .list
         model.label = "Choose an action"
         model.items = items
@@ -527,6 +608,20 @@ final class NotchPopup {
         }
     }
 
+    /// Development only: the same as a click on the popup, used by `--demo-compact … --click <seconds>`.
+    func demoClick() { clicked() }
+
+    /// A click on the compact popup while it works opens the full popup with the text as it streams in; any other
+    /// click on a message closes it.
+    private func clicked() {
+        if model.compact, model.mode == .message, model.phase == .working {
+            model.compact = false
+            layout()
+            return
+        }
+        dismiss()
+    }
+
     private func dismiss() {
         dismissed = true
         hideTimer?.invalidate()
@@ -538,6 +633,19 @@ final class NotchPopup {
         visible = false
         hovering = false
         holdEscape(false)
+        if model.compact, model.mode == .message {
+            // The text leaves first, then the notch narrows back, empty; the window itself never fades.
+            withAnimation(.easeIn(duration: Self.compactTextLeaving)) { model.compactShown = false }
+            withAnimation(Self.compactClosing.delay(Self.compactNarrowDelay)) { model.compactOpen = false }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.compactNarrowDelay + 0.26) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, !self.visible else { return }
+                    self.panel.orderOut(nil)
+                    self.model.compact = false
+                }
+            }
+            return
+        }
         let screen = targetScreen()
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.22
@@ -548,6 +656,7 @@ final class NotchPopup {
             MainActor.assumeIsolated {
                 guard let self, !self.visible else { return }
                 self.panel.orderOut(nil)
+                self.model.compact = false
             }
         })
     }
@@ -555,6 +664,10 @@ final class NotchPopup {
     // MARK: Geometry
 
     private func layout() {
+        if model.mode == .message && model.compact {
+            presentCompact(compactFrame())
+            return
+        }
         let streaming = model.mode == .message && model.phase == .working && !model.text.isEmpty
         let screen = targetScreen()
         let frame = screen.frame
@@ -613,9 +726,73 @@ final class NotchPopup {
         model.bodyHeight = bodyHeight
 
         let target = NSRect(x: frame.midX - width / 2, y: frame.maxY - height, width: width, height: height)
-        // While a message is on screen, Esc closes it; the list handles Esc itself because it has the keyboard.
-        holdEscape(model.mode == .message)
+        present(target, streaming: streaming)
+        if demoFrameLog { Log.write("popup window \(panel.windowNumber) body height \(Int(bodyHeight))") }
+    }
+
+    /// The compact popup: as tall as the notch, the notch's width plus one side on each edge, wide enough for the
+    /// action name (at most 150 pt). On a display without a notch it is a pill at the top centre.
+    private func compactFrame() -> NSRect {
+        let screen = targetScreen()
+        let frame = screen.frame
+        let notch = Self.notchRect(on: screen)
+        let hasNotch = notch.height > 1
+        let font = NSFont.systemFont(ofSize: Self.compactFontSize, weight: .medium)
+        let labelWidth = ceil((model.compactLabel as NSString).size(withAttributes: [.font: font]).width) + 1
+        // The three dots are about 21 pt wide; both sides get the same width, so the shape stays centred.
+        let side = max(min(labelWidth, 150), 24)
+        let height = hasNotch ? notch.height : 24
+        let gap = hasNotch ? notch.width + 16 : 16
+        model.compactSide = side
+        model.compactGap = gap
+        model.compactTopRadius = hasNotch ? 0 : height / 2
+        model.compactBottomRadius = hasNotch ? 10 : height / 2
+        model.compactClosedWidth = hasNotch ? notch.width : 0
+        let width = gap + 2 * side + 2 * Self.compactPadding
+        return NSRect(x: frame.midX - width / 2, y: frame.maxY - height - (hasNotch ? 0 : 4), width: width, height: height)
+    }
+
+    /// Puts the compact popup on screen: the window takes its final size at once and the black shape inside widens
+    /// out of the notch. It has no shadow, like the notch itself.
+    private func presentCompact(_ target: NSRect) {
+        holdEscape(false)
+        panel.hasShadow = false
+        let wasVisible = visible
+        visible = true
+        panel.alphaValue = 1
+        if panel.frame != target { panel.setFrame(target, display: true) }
+        if wasVisible {
+            model.compactOpen = true
+            model.compactShown = true
+        } else {
+            model.compactOpen = false
+            model.compactShown = false
+            panel.orderFrontRegardless()
+            DispatchQueue.main.async { [weak self] in
+                withAnimation(Self.compactOpening) { self?.model.compactOpen = true }
+            }
+            // The text comes in while the notch is still widening, not after it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                guard let self, self.visible, self.model.compact else { return }
+                withAnimation(.easeOut(duration: 0.14)) { self.model.compactShown = true }
+            }
+        }
+    }
+
+    static let compactOpening = Animation.spring(response: 0.35, dampingFraction: 0.85)
+    static let compactClosing = Animation.easeIn(duration: 0.22)
+    /// On closing, the text leaves over this time; the notch starts to narrow a little before it is gone.
+    static let compactTextLeaving: TimeInterval = 0.16
+    static let compactNarrowDelay: TimeInterval = 0.14
+
+    /// Puts the popup at `target`: grows it out of the notch when it is not on screen yet, otherwise moves it.
+    private func present(_ target: NSRect, streaming: Bool) {
+        panel.hasShadow = true
+        // While a full message is on screen, Esc closes it; the list handles Esc itself because it has the keyboard.
+        // The compact popup leaves Esc to the person's application.
+        holdEscape(model.mode == .message && !model.compact)
         if !visible {
+            let notch = Self.notchRect(on: targetScreen())
             visible = true
             panel.setFrame(notch, display: false)
             panel.alphaValue = 1
@@ -634,7 +811,6 @@ final class NotchPopup {
                 panel.animator().setFrame(target, display: true)
             }
         }
-        if demoFrameLog { Log.write("popup window \(panel.windowNumber) body height \(Int(bodyHeight))") }
         if demoFrameLog { Log.write("popup frame \(Int(target.minX)) \(Int(target.minY)) \(Int(target.width))x\(Int(target.height)) top=\(Int(target.maxY)) streaming=\(streaming)") }
     }
 

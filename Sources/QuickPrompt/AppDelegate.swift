@@ -38,19 +38,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
-        // `--demo-clipboard <result file> <source file> <output folder>` writes what a result would put on the
-        // clipboard (plain.txt, page.html, rich.rtf) into a folder, using a private pasteboard; nothing is copied.
-        if let index = arguments.firstIndex(of: "--demo-clipboard"), index + 3 < arguments.count {
-            let read = { (path: String) in (try? String(contentsOfFile: path, encoding: .utf8)) ?? "" }
-            let copy = ClipboardResult(result: read(arguments[index + 1]), source: read(arguments[index + 2]))
-            let pasteboard = NSPasteboard(name: NSPasteboard.Name("QuickPrompt.demo"))
-            copy.write(to: pasteboard)
-            let folder = URL(fileURLWithPath: arguments[index + 3])
-            try? pasteboard.string(forType: .string)?.write(to: folder.appendingPathComponent("plain.txt"), atomically: true, encoding: .utf8)
-            try? pasteboard.string(forType: .html)?.write(to: folder.appendingPathComponent("page.html"), atomically: true, encoding: .utf8)
-            try? pasteboard.data(forType: .rtf)?.write(to: folder.appendingPathComponent("rich.rtf"))
-            pasteboard.releaseGlobally()
-            NSApp.terminate(nil)
+        // `--demo-compact <action name> <seconds>` shows the compact popup working for that long, then as done; with
+        // `--snapshot <path>` it saves a picture of it after one second, with `--click <seconds>` it is clicked then.
+        // Nothing is copied.
+        if let index = arguments.firstIndex(of: "--demo-compact"), index + 2 < arguments.count {
+            popup.demoFrameLog = true
+            popup.showWorking(label: "\(arguments[index + 1]) · Sonnet", compactLabel: arguments[index + 1])
+            if let snapshot = arguments.firstIndex(of: "--snapshot"), snapshot + 1 < arguments.count {
+                let path = arguments[snapshot + 1]
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [popup] in
+                    MainActor.assumeIsolated { popup.writeSnapshot(to: path) }
+                }
+            }
+            if let click = arguments.firstIndex(of: "--click"), click + 1 < arguments.count,
+               let after = Double(arguments[click + 1]) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + after) { [popup] in
+                    MainActor.assumeIsolated {
+                        popup.update("Streaming text of the answer, shown once the compact popup was clicked.")
+                        popup.demoClick()
+                    }
+                }
+            }
+            let seconds = Double(arguments[index + 2]) ?? 3
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [popup] in
+                MainActor.assumeIsolated {
+                    popup.showResult("Done", status: "Replaced")
+                    Log.write("demo-compact done")
+                }
+            }
             return
         }
         // `--demo-action <action name> <model> <text>` runs an action three times with another model (for example
@@ -245,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let label = direction.map { "\(state.modelTitle(action.model)) · \($0.label)" }
                 ?? "\(action.name) · \(state.modelTitle(action.model))"
             let showsPopup = action.popup != .hidden
-            if showsPopup { popup.showWorking(label: label) }
+            if showsPopup { popup.showWorking(label: label, compactLabel: action.popup == .compact ? action.name : nil) }
             do {
                 let answer = try await produce(action, text: text, direction: direction, streamToPopup: showsPopup)
                 try Task.checkCancellation()
@@ -258,8 +273,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 let result = answer.text
-                let copy = ClipboardResult(result: result, source: text)
-                copy.write()
+                // The result goes on the clipboard exactly as the model wrote it, Markdown marks included, so a
+                // pasted prompt keeps its headings and lists.
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(result, forType: .string)
                 state.lastResult = (label: label, text: result)
 
                 var status = "Copied"
@@ -269,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // and the clipboard still holds this result; otherwise it stays copied only.
                     if Task.isCancelled { return }
                     if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApp,
-                       NSPasteboard.general.string(forType: .string) == copy.plain {
+                       NSPasteboard.general.string(forType: .string) == result {
                         SelectionCopier.paste()
                         status = "Replaced"
                     } else {
@@ -281,7 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 Log.write("#\(attempt) action=\(action.name) model=\(action.model) resolved=\(state.resolvedModels[action.model] ?? "-") "
                     + "result=\(action.result.rawValue) popup=\(action.popup.rawValue) status=\(status) "
-                    + "totalMs=\(Int(Date().timeIntervalSince(started) * 1000)) characters=\(result.count) rich=\(copy.html != nil)")
+                    + "totalMs=\(Int(Date().timeIntervalSince(started) * 1000)) characters=\(result.count)")
             } catch is CancellationError {
                 return
             } catch {

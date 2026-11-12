@@ -16,6 +16,8 @@ enum ResultMode: String, Codable, CaseIterable, Identifiable {
 enum PopupMode: String, Codable, CaseIterable, Identifiable {
     case autoHide
     case stay
+    /// Only the action name and the moving dots beside the notch while it runs; closes as soon as it is done.
+    case compact
     case hidden
 
     var id: String { rawValue }
@@ -23,6 +25,7 @@ enum PopupMode: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .autoHide: return "Auto-hide"
         case .stay: return "Stay until clicked"
+        case .compact: return "Compact"
         case .hidden: return "Don't show"
         }
     }

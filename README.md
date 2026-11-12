@@ -184,10 +184,8 @@ System Settings completely and open it again: the list is not always refreshed w
 Models often answer in Markdown. The popup shows it as formatting: bold and italic text, headings, bulleted and
 numbered lists, quotes, tables and code (rendered with [Textual](https://github.com/gonzalezreal/textual)).
 
-The clipboard gets the result twice: as rich text, which Notes, Mail, Pages and Google Docs keep with its bold text,
-lists and tables, and as plain text without the `**` and `-` marks, with "•" before list items and tabs between table
-cells, for plain fields such as Terminal. If the selected text was itself Markdown, for example a README paragraph,
-the result is copied exactly as the model wrote it, with its marks.
+The clipboard gets the result exactly as the model wrote it, with its Markdown marks (`##`, `-`, `**`). A rewritten
+prompt pasted into a chat box, an editor or a terminal keeps its headings and lists.
 
 ### The list of all actions
 
@@ -202,6 +200,10 @@ remember a shortcut.
   Another screen can be chosen in the settings.
 - **Auto-hide** actions: the popup hides after 4 seconds (configurable). While the pointer is over it, it stays open.
 - **Stay until clicked** actions: it stays until you click it. Meant for results you read, such as summaries.
+- **Compact** actions: while the action runs, the notch widens a little to both sides and shows only the action's
+  name and three moving dots. When the result is pasted or copied, the name and dots leave and the notch narrows back
+  at once; no result is shown. A click on it opens the full popup with the answer as it streams in. An error always
+  opens the full popup. Esc is left to your application.
 - **Don't show** actions: no popup at all, except for errors.
 - A click anywhere on the popup, or **Esc**, closes it. While a popup is on screen, Esc belongs to QuickPrompt;
   otherwise it reaches your applications as usual. If an action is still running, it finishes in the background and
@@ -234,7 +236,7 @@ For each action:
 | Shortcut | Click the field and press the keys. **Esc** cancels, **⌫** clears. A shortcut needs ⌘, ⌥ or ⌃, except function keys. A warning appears when another action already uses it or when another application holds it |
 | Model | **Apple Translation** (translation only, on the Mac; the instruction field is greyed out) a Claude Code model alias: **Haiku**, **Sonnet**, **Opus**, **Fable**, or a **Codex** model. Each Claude alias always means the latest model of that kind; after the first use the exact version is shown, for example `claude-sonnet-5`. Codex models are the ones your installed Codex offers to your account. The list is grouped into Apple, Claude and Codex, and Codex models are shown by short names such as **6.1 Sol** |
 | Result | **Copy**, or **Replace selection** (also copies) |
-| Popup | **Auto-hide**, **Stay until clicked**, or **Don't show** |
+| Popup | **Auto-hide**, **Stay until clicked**, **Compact**, or **Don't show** |
 | Instruction | The system prompt sent to Claude. For Translate it is used only with a Claude model; Apple Translation takes no instruction, and the app adds "Translate into …" with the detected direction to every request |
 
 While a shortcut is being recorded, all global shortcuts are released, so an existing combination can be recorded
@@ -434,7 +436,7 @@ Sources/QuickPrompt/
   SettingsView.swift          Settings window: actions list, action editor, general settings, shortcut recorder
   MenuPopoverView.swift       The panel that opens from the menu bar icon
   NotchPopup.swift            The popup under the notch, including the list of all actions
-  PopupMarkdown.swift         Markdown in the popup (Textual style), its height, rich and plain text for the clipboard
+  PopupMarkdown.swift         Markdown in the popup (Textual style), its height
   SelectionCopier.swift       Copying the selection, pasting, the diagnostic log
   Translators.swift           Language direction, Apple Translation, the Claude Code runner
   Codex.swift                 The Codex runner: one app-server process, conversations prepared in advance
@@ -450,6 +452,9 @@ Sources/QuickPrompt/
 
 # Stream a long text into the popup word by word and log every popup frame
 ~/Applications/QuickPrompt.app/Contents/MacOS/QuickPrompt --demo-stream
+
+# Show the compact popup for 3 seconds, click it after 1.5 seconds (optional), then finish
+~/Applications/QuickPrompt.app/Contents/MacOS/QuickPrompt --demo-compact "Improve prompt" 3 --click 1.5
 
 # Run an action three times with another model on the given text and print the times (nothing is copied or saved)
 ~/Applications/QuickPrompt.app/Contents/MacOS/QuickPrompt --demo-action Translate codex:gpt-6-luna "Привет"

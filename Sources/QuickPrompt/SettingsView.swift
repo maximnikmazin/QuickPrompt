@@ -215,6 +215,7 @@ struct ActionEditor: View {
         switch action.popup {
         case .autoHide: popup = "The popup hides after \(Int(state.file.general.hideDelay)) s, or stays while the pointer is over it."
         case .stay: popup = "The popup stays until you click it."
+        case .compact: popup = "Only a small status beside the notch while it runs; it closes when done. Click it to see the text; errors open the full popup."
         case .hidden: popup = "No popup, except for errors."
         }
         return result + " " + popup
